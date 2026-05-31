@@ -1,6 +1,6 @@
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useAccount, useDisconnect } from 'wagmi';
-import { useAppKit } from '@reown/appkit-wagmi-react-native';
+import { useAppKit } from '@reown/appkit-react-native';
 
 interface WalletContextValue {
   address: string | null;

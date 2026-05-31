@@ -1,9 +1,12 @@
-import { createAppKit, defaultWagmiConfig } from '@reown/appkit-wagmi-react-native';
-import { hardhat, sepolia } from 'viem/chains';
+import { WagmiAdapter, formatNetworks } from '@reown/appkit-wagmi-react-native';
+import { createAppKit } from '@reown/appkit-react-native';
+import type { Storage } from '@reown/appkit-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { sepolia, hardhat } from 'viem/chains';
 
-// ─── Config ─────────────────────────────────────────────────────────────────
+// ─── Project ID ──────────────────────────────────────────────────────────────
 // Get a free Project ID at https://cloud.walletconnect.com
-const projectId =
+export const projectId =
   (process.env.EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID as string) ||
   'YOUR_WALLETCONNECT_PROJECT_ID';
 
@@ -13,28 +16,74 @@ const metadata = {
   url: 'https://votedecen.app',
   icons: ['https://votedecen.app/icon.png'],
   redirect: {
-    // Must match the scheme in app.json
     native: 'votedecen://',
     universal: 'https://votedecen.app',
   },
 };
 
+// ─── Storage Adapter ─────────────────────────────────────────────────────────
+// AppKit requires a Storage implementation — we use AsyncStorage
+const appKitStorage: Storage = {
+  getKeys: async () => {
+    const keys = await AsyncStorage.getAllKeys();
+    return [...keys];
+  },
+  getEntries: async <T>(): Promise<[string, T][]> => {
+    const keys = await AsyncStorage.getAllKeys();
+    const result: [string, T][] = [];
+    for (const key of keys) {
+      const val = await AsyncStorage.getItem(key);
+      result.push([key, val ? JSON.parse(val) : undefined]);
+    }
+    return result;
+  },
+  getItem: async <T>(key: string): Promise<T | undefined> => {
+    const val = await AsyncStorage.getItem(key);
+    return val ? JSON.parse(val) : undefined;
+  },
+  setItem: async <T>(key: string, value: T): Promise<void> => {
+    await AsyncStorage.setItem(key, JSON.stringify(value));
+  },
+  removeItem: async (key: string): Promise<void> => {
+    await AsyncStorage.removeItem(key);
+  },
+};
+
 // ─── Chains ──────────────────────────────────────────────────────────────────
-// For local Hardhat: use `hardhat` chain. For testnet: use `sepolia`.
-// NOTE: Mobile wallets (MetaMask) cannot reach localhost directly.
-// Use ngrok to tunnel local Hardhat, OR redeploy to Sepolia.
-const chains = [sepolia, hardhat] as const;
+// WagmiAdapter needs a tuple: [Chain, ...Chain[]]
+// NOTE: Mobile wallets can't connect to hardhat localhost.
+// Redeploy to Sepolia and update EXPO_PUBLIC_CONTRACT_ADDRESS, or use ngrok.
+export const wagmiChains = [sepolia, hardhat] as const satisfies readonly [
+  typeof sepolia,
+  ...typeof hardhat[]
+];
 
-// ─── Wagmi Config ────────────────────────────────────────────────────────────
-export const wagmiConfig = defaultWagmiConfig({ chains, projectId, metadata });
+// ─── Wagmi Adapter ───────────────────────────────────────────────────────────
+export const wagmiAdapter = new WagmiAdapter({
+  networks: wagmiChains,
+  projectId,
+});
 
-// ─── AppKit Init ─────────────────────────────────────────────────────────────
-// Call this ONCE at app startup (in _layout.tsx)
-export function initAppKit() {
-  createAppKit({
+export const wagmiConfig = wagmiAdapter.wagmiConfig;
+
+// Convert to Reown Network[] for createAppKit
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const appKitNetworks = formatNetworks(wagmiChains as any) as any[];
+
+// ─── AppKit Singleton ────────────────────────────────────────────────────────
+type AppKitInstance = ReturnType<typeof createAppKit>;
+let _appKit: AppKitInstance | null = null;
+
+export function initAppKit(): AppKitInstance {
+  if (_appKit) return _appKit;
+
+  _appKit = createAppKit({
     projectId,
-    wagmiConfig,
-    defaultChain: sepolia,
-    enableAnalytics: false,
+    networks: appKitNetworks,
+    adapters: [wagmiAdapter],
+    metadata,
+    storage: appKitStorage,
   });
+
+  return _appKit;
 }
