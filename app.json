@@ -28,9 +28,9 @@
           "action": "VIEW",
           "autoVerify": true,
           "data": [
-            {
-              "scheme": "votedecen"
-            }
+            { "scheme": "votedecen" },
+            { "scheme": "https", "host": "votedecen.app" },
+            { "scheme": "http", "host": "votedecen.app" }
           ],
           "category": [
             "BROWSABLE",

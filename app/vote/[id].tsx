@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
 
 import { useTheme } from '@/context/ThemeContext';
 import { useWallet } from '@/hooks/useWallet';
@@ -202,8 +202,25 @@ export default function VoteScreen() {
   const [votingIndex, setVotingIndex] = useState<number | null>(null);
   const { showToast, toast, hideToast } = useToast();
 
+  // Read contract owner and check if user has already voted
+  const { data: contractOwner } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: CONTRACT_ABI,
+    functionName: 'owner',
+  });
+
+  const { data: hasVoted, refetch: refetchHasVoted } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: CONTRACT_ABI,
+    functionName: 'userSudahVoting',
+    args: address ? [address as `0x${string}`] : undefined,
+    query: {
+      enabled: !!address,
+    }
+  });
+
   // wagmi contract write
-  const { writeContract, data: txHash, isPending } = useWriteContract();
+  const { writeContractAsync, data: txHash, isPending } = useWriteContract();
 
   // Wait for transaction confirmation
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
@@ -216,6 +233,7 @@ export default function VoteScreen() {
       showToast('Vote cast successfully! 🗳', 'success');
       setVotingIndex(null);
       refetch();
+      refetchHasVoted();
     }
   }, [isSuccess]);
 
@@ -224,16 +242,45 @@ export default function VoteScreen() {
     if (session?.require_nik && !isVerified) return showToast('NIK verification required', 'error');
     if (session?.status === 'finished' || !isVotingActive) return showToast('Voting is closed', 'error');
 
+    // 1. Validasi Pemilik Kontrak (Owner)
+    if (contractOwner && address && contractOwner.toLowerCase() === address.toLowerCase()) {
+      return showToast('Owner tidak diperbolehkan voting! Silakan ganti ke akun pemilih.', 'error');
+    }
+
+    // 2. Validasi Sudah Memilih
+    if (hasVoted) {
+      return showToast('Anda sudah menggunakan hak suara Anda untuk alamat wallet ini!', 'error');
+    }
+
     try {
       setVotingIndex(index);
-      writeContract({
+      await writeContractAsync({
         address: CONTRACT_ADDRESS,
         abi: CONTRACT_ABI,
         functionName: 'voting',
         args: [BigInt(index)],
       });
     } catch (err: any) {
-      showToast(err.reason || err.message || 'Transaction failed', 'error');
+      let friendlyError = 'Transaksi gagal dilakukan';
+      const errMsg = err.message || '';
+
+      if (errMsg.includes('Voting Belum Dimulai')) {
+        friendlyError = 'Voting belum diaktifkan oleh admin. Silakan tunggu.';
+      } else if (errMsg.includes('Kandidat Tidak Tersedia')) {
+        friendlyError = 'Kandidat tidak ditemukan atau tidak valid.';
+      } else if (errMsg.includes('Anda Sudah Memilih')) {
+        friendlyError = 'Anda sudah menggunakan hak suara Anda untuk wallet ini!';
+      } else if (errMsg.includes('Owner tidak diperbolehkan voting')) {
+        friendlyError = 'Owner kontrak dilarang melakukan voting. Gunakan akun lain.';
+      } else if (errMsg.includes('User rejected the request')) {
+        friendlyError = 'Transaksi dibatalkan di aplikasi wallet.';
+      } else if (errMsg.includes('gas limit') || errMsg.includes('gas cap')) {
+        friendlyError = 'Gagal memproses gas transaksi. Pastikan Anda tidak menggunakan akun Owner.';
+      } else {
+        friendlyError = errMsg;
+      }
+
+      showToast(friendlyError, 'error');
       setVotingIndex(null);
     }
   };

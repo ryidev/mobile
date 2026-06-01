@@ -49,13 +49,19 @@ const appKitStorage: Storage = {
   },
 };
 
-// ─── Chains ──────────────────────────────────────────────────────────────────
-// WagmiAdapter needs a tuple: [Chain, ...Chain[]]
-// NOTE: Mobile wallets can't connect to hardhat localhost.
-// Redeploy to Sepolia and update EXPO_PUBLIC_CONTRACT_ADDRESS, or use ngrok.
-export const wagmiChains = [sepolia, hardhat] as const satisfies readonly [
+const customHardhat = {
+  ...hardhat,
+  rpcUrls: {
+    ...hardhat.rpcUrls,
+    default: {
+      http: ['http://127.0.0.1:8545'],
+    },
+  },
+};
+
+export const wagmiChains = [sepolia, customHardhat] as const satisfies readonly [
   typeof sepolia,
-  ...typeof hardhat[]
+  ...any[]
 ];
 
 // ─── Wagmi Adapter ───────────────────────────────────────────────────────────
@@ -83,6 +89,17 @@ export function initAppKit(): AppKitInstance {
     adapters: [wagmiAdapter],
     metadata,
     storage: appKitStorage,
+    customWallets: [
+      {
+        id: 'metaMask',
+        name: 'MetaMask',
+        homepage: 'https://metamask.io',
+        image_url: 'https://registry.walletconnect.org/v2/logo/md/5195e9db-94d8-4579-6f11-ef553be95100',
+        mobile_link: 'metamask://',
+        app_store: 'https://apps.apple.com/us/app/metamask/id1438144202',
+        play_store: 'https://play.google.com/store/apps/details?id=io.metamask',
+      },
+    ],
   });
 
   return _appKit;
