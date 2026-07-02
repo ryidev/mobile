@@ -1,7 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useReadContract } from 'wagmi';
+import { createPublicClient, http } from 'viem';
+import { hardhat } from 'viem/chains';
 import { supabase } from '@/lib/supabaseClient';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from '@/lib/evotingContract';
+
+const publicClient = createPublicClient({
+  chain: hardhat,
+  transport: http('http://127.0.0.1:8545'),
+});
 
 export interface Candidate {
   id: number;
@@ -21,6 +28,9 @@ export interface VotingSession {
   winner_address?: string;
   status?: 'active' | 'paused' | 'finished';
   require_nik?: boolean;
+  enforce_age?: boolean;
+  id_label?: string;
+  id_length?: number;
 }
 
 export function useVotingSession(sessionId: string | number) {
@@ -59,10 +69,18 @@ export function useVotingSession(sessionId: string | number) {
       // Enrich candidates with on-chain vote counts
       const enriched = await Promise.all(
         (candData || []).map(async (c: Candidate, index: number) => {
-          // We use a separate raw fetch for per-candidate reads since
-          // wagmi hooks can't be called conditionally in a loop.
-          // For live apps, batch these with multicall.
-          return { ...c, votes: 0, index };
+          try {
+            const result = await publicClient.readContract({
+              address: CONTRACT_ADDRESS,
+              abi: CONTRACT_ABI,
+              functionName: 'kandidat',
+              args: [BigInt(index)],
+            }) as [string, bigint];
+            return { ...c, votes: Number(result[1]), index };
+          } catch (e: any) {
+            console.warn('Error fetching on-chain votes for candidate index', index, e.message);
+            return { ...c, votes: 0, index };
+          }
         })
       );
 

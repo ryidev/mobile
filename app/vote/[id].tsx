@@ -28,9 +28,15 @@ import { WalletButton } from '@/components/WalletButton';
 function NikGate({
   onVerified,
   walletAddress,
+  idLabel = 'NIK',
+  idLength = 16,
+  enforceAge = false,
 }: {
   onVerified: () => void;
   walletAddress: string;
+  idLabel?: string;
+  idLength?: number;
+  enforceAge?: boolean;
 }) {
   const { colors } = useTheme();
   const { showToast, toast, hideToast } = useToast();
@@ -40,6 +46,7 @@ function NikGate({
   const [loading, setLoading] = useState(false);
 
   const calculateAge = (dateStr: string) => {
+    if (!dateStr) return 0;
     const birth = new Date(dateStr);
     const today = new Date();
     let age = today.getFullYear() - birth.getFullYear();
@@ -52,25 +59,46 @@ function NikGate({
 
   const handleAuth = async () => {
     if (!walletAddress) return showToast('Connect your wallet first', 'error');
-    if (nik.length !== 16) return showToast('NIK must be exactly 16 digits', 'error');
+    if (nik.length !== idLength) return showToast(`${idLabel} must be exactly ${idLength} digits`, 'error');
 
     setLoading(true);
     try {
       if (authMode === 'register') {
-        if (!birthDate) throw new Error('Enter your birth date');
-        const age = calculateAge(birthDate);
-        if (age < 17) throw new Error('You must be 17+ to vote');
+        // Pre-validation to avoid database constraint violations and provide clear error messages
+        const { data: existingNik } = await supabase
+          .from('verified_voters')
+          .select('nik')
+          .eq('nik', nik)
+          .maybeSingle();
+        if (existingNik) {
+          throw new Error(`This ${idLabel} is already registered.`);
+        }
+
+        const { data: existingWallet } = await supabase
+          .from('verified_voters')
+          .select('wallet_address')
+          .eq('wallet_address', walletAddress.toLowerCase())
+          .maybeSingle();
+        if (existingWallet) {
+          throw new Error("This wallet is already linked to an identity. Please use the LOGIN tab instead.");
+        }
+
+        if (enforceAge) {
+          if (!birthDate) throw new Error('Enter your birth date');
+          const age = calculateAge(birthDate);
+          if (age < 17) throw new Error('You must be 17+ to vote');
+        }
 
         const { error } = await supabase.from('verified_voters').insert([
           {
             nik,
-            birth_date: birthDate,
+            birth_date: enforceAge ? birthDate : '2000-01-01',
             wallet_address: walletAddress.toLowerCase(),
             full_name: 'Verified Voter',
           },
         ]);
         if (error) {
-          throw new Error(error.code === '23505' ? 'This NIK is already registered' : error.message);
+          throw new Error(error.message);
         }
         showToast('Registration successful!', 'success');
         setTimeout(onVerified, 1000);
@@ -82,9 +110,13 @@ function NikGate({
           .eq('wallet_address', walletAddress.toLowerCase())
           .single();
 
-        if (error || !data) throw new Error('NIK does not match this wallet');
-        const age = calculateAge(data.birth_date);
-        if (age < 17) throw new Error('You must be 17+ to vote');
+        if (error || !data) throw new Error(`${idLabel} does not match this wallet`);
+        
+        if (enforceAge) {
+          if (!data.birth_date) throw new Error('Age verification is required, but birth date is not recorded for this identity');
+          const age = calculateAge(data.birth_date);
+          if (age < 17) throw new Error('You must be 17+ to vote');
+        }
 
         showToast('Verified!', 'success');
         setTimeout(onVerified, 1000);
@@ -127,32 +159,32 @@ function NikGate({
       </View>
 
       <Text style={[styles.gateTitle, { color: colors.text }]}>
-        {authMode === 'register' ? 'NIK Registration' : 'Verify Identity'}
+        {authMode === 'register' ? `${idLabel} Registration` : 'Verify Identity'}
       </Text>
       <Text style={[styles.gateSub, { color: colors.textMuted }]}>
         {authMode === 'register'
-          ? 'Link your NIK to this wallet address.'
-          : 'Enter your NIK to verify wallet linkage.'}
+          ? `Link your ${idLabel} to this wallet address.`
+          : `Enter your ${idLabel} to verify wallet linkage.`}
       </Text>
 
       {/* NIK Input */}
       <View style={[styles.inputWrap, { borderBottomColor: colors.border }]}>
         <Text style={[styles.inputLabel, { color: colors.textMuted }]}>
-          National ID (NIK)
+          Identifier ({idLabel})
         </Text>
         <TextInput
           value={nik}
-          onChangeText={(t) => setNik(t.replace(/\D/g, '').slice(0, 16))}
-          placeholder="16 Digit Number"
+          onChangeText={(t) => setNik(t.replace(/\D/g, '').slice(0, idLength))}
+          placeholder={`${idLength} Digit Number`}
           placeholderTextColor={colors.textMuted}
           keyboardType="numeric"
-          maxLength={16}
+          maxLength={idLength}
           style={[styles.input, { color: colors.text }]}
         />
       </View>
 
       {/* Birth Date (register only) */}
-      {authMode === 'register' && (
+      {authMode === 'register' && enforceAge && (
         <View style={[styles.inputWrap, { borderBottomColor: colors.border }]}>
           <Text style={[styles.inputLabel, { color: colors.textMuted }]}>
             Birth Date (YYYY-MM-DD)
@@ -236,6 +268,45 @@ export default function VoteScreen() {
       refetchHasVoted();
     }
   }, [isSuccess]);
+
+  // Automatically check if connected wallet is already verified in Supabase on load
+  React.useEffect(() => {
+    async function checkVerification() {
+      if (!address || !session) {
+        setIsVerified(false);
+        return;
+      }
+      try {
+        const { data } = await supabase
+          .from('verified_voters')
+          .select('*')
+          .eq('wallet_address', address.toLowerCase())
+          .single();
+
+        if (data) {
+          if (session.enforce_age) {
+            const birth = new Date(data.birth_date);
+            const today = new Date();
+            let age = today.getFullYear() - birth.getFullYear();
+            if (
+              today.getMonth() < birth.getMonth() ||
+              (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())
+            ) age--;
+            if (age < 17) {
+              setIsVerified(false);
+              return;
+            }
+          }
+          setIsVerified(true);
+        } else {
+          setIsVerified(false);
+        }
+      } catch (err) {
+        setIsVerified(false);
+      }
+    }
+    checkVerification();
+  }, [address, session]);
 
   const handleVote = async (index: number) => {
     if (!isConnected) return showToast('Connect your wallet first', 'error');
@@ -351,7 +422,7 @@ export default function VoteScreen() {
             {session?.require_nik && (
               <View style={[styles.nikPill, { backgroundColor: colors.accentLight, borderColor: colors.accent + '50' }]}>
                 <Text style={[styles.nikPillText, { color: colors.accent }]}>
-                  🛡 NIK Verification Required
+                  🛡 {session?.id_label || 'NIK'} Verification Required
                 </Text>
               </View>
             )}
@@ -385,6 +456,9 @@ export default function VoteScreen() {
             <NikGate
               walletAddress={address!}
               onVerified={() => setIsVerified(true)}
+              idLabel={session?.id_label}
+              idLength={session?.id_length}
+              enforceAge={session?.enforce_age}
             />
           )}
 
