@@ -7,8 +7,6 @@ import {
   StyleSheet,
   RefreshControl,
   ActivityIndicator,
-  TextInput,
-  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -35,31 +33,6 @@ export default function ForumsScreen() {
   const [sessions, setSessions] = useState<VotingSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [inputLink, setInputLink] = useState('');
-
-  const handleOpenForum = () => {
-    if (!inputLink.trim()) return;
-
-    let cleanId = inputLink.trim();
-
-    // Parse the ID from standard web URL or custom scheme
-    if (cleanId.includes('/vote/')) {
-      const parts = cleanId.split('/vote/');
-      if (parts.length > 1) {
-        const possibleId = parts[1].split('?')[0].split('#')[0];
-        if (/^\d+$/.test(possibleId)) {
-          cleanId = possibleId;
-        }
-      }
-    }
-
-    if (/^\d+$/.test(cleanId)) {
-      router.push(`/vote/${cleanId}`);
-      setInputLink('');
-    } else {
-      Alert.alert('ID Tidak Valid', 'Silakan masukkan ID angka atau URL forum yang valid.');
-    }
-  };
 
   const fetchSessions = async () => {
     const { data, error } = await supabase
@@ -139,34 +112,6 @@ export default function ForumsScreen() {
           <WalletButton size="sm" />
         </View>
       </View>
-
-      {/* Manual Forum Link/ID Importer */}
-      <View style={[styles.importerContainer, { backgroundColor: colors.bgCard, borderBottomColor: colors.border }]}>
-        <Text style={[styles.importerTitle, { color: colors.text }]}>🔑 Akses Forum via Link / ID</Text>
-        <View style={styles.importerRow}>
-          <TextInput
-            style={[styles.importerInput, { 
-              backgroundColor: colors.bgMuted, 
-              color: colors.text,
-              borderColor: colors.border,
-            }]}
-            placeholder="Masukkan ID Forum atau Tempel URL..."
-            placeholderTextColor={colors.textMuted}
-            value={inputLink}
-            onChangeText={setInputLink}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TouchableOpacity 
-            style={[styles.importerBtn, { backgroundColor: colors.accent }]} 
-            onPress={handleOpenForum}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.importerBtnText}>Buka</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
       {/* Content */}
       {loading ? (
         <View style={styles.center}>
@@ -277,40 +222,4 @@ const styles = StyleSheet.create({
   loadingText: { fontSize: 10, fontWeight: '900', letterSpacing: 3, marginTop: 12 },
   emptyTitle: { fontSize: 20, fontWeight: '800', marginTop: 8 },
   emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 22 },
-  importerContainer: {
-    padding: 16,
-    borderBottomWidth: 1,
-    gap: 8,
-  },
-  importerTitle: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-  },
-  importerRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  importerInput: {
-    flex: 1,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 13,
-  },
-  importerBtn: {
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  importerBtnText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
 });

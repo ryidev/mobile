@@ -66,23 +66,47 @@ export function useVotingSession(sessionId: string | number) {
 
       if (candError) throw candError;
 
-      // Enrich candidates with on-chain vote counts
-      const enriched = await Promise.all(
-        (candData || []).map(async (c: Candidate, index: number) => {
-          try {
-            const result = await publicClient.readContract({
-              address: CONTRACT_ADDRESS,
-              abi: CONTRACT_ABI,
-              functionName: 'kandidat',
-              args: [BigInt(index)],
-            }) as [string, bigint];
-            return { ...c, votes: Number(result[1]), index };
-          } catch (e: any) {
-            console.warn('Error fetching on-chain votes for candidate index', index, e.message);
-            return { ...c, votes: 0, index };
-          }
-        })
-      );
+      // Fetch all registered candidates from the blockchain
+      let totalOnChain = 0;
+      try {
+        const total = await publicClient.readContract({
+          address: CONTRACT_ADDRESS,
+          abi: CONTRACT_ABI,
+          functionName: 'totalKandidat',
+        }) as bigint;
+        totalOnChain = Number(total);
+      } catch (e) {
+        console.warn('Failed to fetch total candidates from blockchain', e);
+      }
+
+      const onChainMapping: { [address: string]: { index: number; votes: number } } = {};
+      for (let i = 0; i < totalOnChain; i++) {
+        try {
+          const result = await publicClient.readContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: 'kandidat',
+            args: [BigInt(i)],
+          }) as [string, bigint];
+          onChainMapping[result[0].toLowerCase()] = {
+            index: i,
+            votes: Number(result[1]),
+          };
+        } catch (e: any) {
+          console.warn('Error fetching on-chain candidate at index', i, e.message);
+        }
+      }
+
+      // Enrich candidates with on-chain vote counts and on-chain indices by matching wallet address
+      const enriched = (candData || []).map((c: any) => {
+        const wallet = c.wallet_address?.toLowerCase();
+        const mapped = onChainMapping[wallet];
+        return {
+          ...c,
+          votes: mapped ? mapped.votes : 0,
+          index: mapped ? mapped.index : -1,
+        };
+      });
 
       // Sort by votes if finished
       if (sessionData?.status === 'finished') {

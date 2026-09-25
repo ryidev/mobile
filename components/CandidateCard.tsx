@@ -35,7 +35,7 @@ export function CandidateCard({
     candidate.image_url ||
     `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(candidate.name)}`;
 
-  const canVote = !isFinished && isVotingActive && !isVoting;
+  const canVote = !isFinished && isVotingActive && !isVoting && candidate.index !== -1;
 
   return (
     <View
@@ -139,6 +139,8 @@ export function CandidateCard({
               ? 'SESSION ARCHIVED'
               : isVoting
               ? 'CASTING...'
+              : candidate.index === -1
+              ? 'NOT SYNCED ON-CHAIN'
               : isVotingActive
               ? 'CAST YOUR VOTE'
               : 'PAUSED'}
