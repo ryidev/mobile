@@ -123,11 +123,11 @@ export function useVotingSession(sessionId: string | number) {
 
   useEffect(() => {
     fetchData();
-    // Poll every 10 seconds for live vote count updates
+    // Poll cepat setiap 2 detik untuk update hasil suara live real-time
     const interval = setInterval(() => {
       fetchData();
       refetchActive();
-    }, 10_000);
+    }, 2_000);
     return () => clearInterval(interval);
   }, [fetchData, refetchActive]);
 

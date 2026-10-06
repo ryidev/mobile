@@ -17,6 +17,8 @@ interface CandidateCardProps {
   isFinished: boolean;
   isVotingActive: boolean;
   isVoting: boolean;
+  hasTicket?: boolean;
+  isTicketUsed?: boolean;
   onVote: (index: number) => void;
 }
 
@@ -27,6 +29,8 @@ export function CandidateCard({
   isFinished,
   isVotingActive,
   isVoting,
+  hasTicket = true,
+  isTicketUsed = false,
   onVote,
 }: CandidateCardProps) {
   const { colors, isDark } = useTheme();
@@ -35,7 +39,7 @@ export function CandidateCard({
     candidate.image_url ||
     `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(candidate.name)}`;
 
-  const canVote = !isFinished && isVotingActive && !isVoting && candidate.index !== -1;
+  const canVote = !isFinished && isVotingActive && !isVoting && candidate.index !== -1 && hasTicket && !isTicketUsed;
 
   return (
     <View
@@ -138,11 +142,15 @@ export function CandidateCard({
             {isFinished
               ? 'SESSION ARCHIVED'
               : isVoting
-              ? 'CASTING...'
+              ? 'SIGNING & RELAYING...'
               : candidate.index === -1
               ? 'NOT SYNCED ON-CHAIN'
+              : isTicketUsed
+              ? 'TIKET SBT TELAH TERPAKAI'
+              : !hasTicket
+              ? 'KLAIM TIKET SBT DAHULU'
               : isVotingActive
-              ? 'CAST YOUR VOTE'
+              ? 'COBLOS DENGAN SBT (0 ETH)'
               : 'PAUSED'}
           </Text>
         )}
